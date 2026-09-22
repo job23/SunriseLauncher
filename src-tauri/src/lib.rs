@@ -1,4 +1,7 @@
 mod commands;
+// The parsing and argument helpers only run on macOS; the tests exercise them everywhere.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+mod crossover;
 mod depot_errors;
 mod error;
 mod github;
@@ -62,6 +65,8 @@ pub fn run() {
             commands::send_terminal_input,
             commands::cancel_operation,
             commands::launch_game,
+            commands::get_crossover_status,
+            commands::prepare_crossover,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

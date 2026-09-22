@@ -12,9 +12,13 @@ This repository is a rewrite of [SunriseInstaller](https://github.com/stanuwu/Su
 | --- | --- | --- |
 | Windows x64 / ARM64 | Supported | Supported |
 | Linux x64 / ARM64 | Experimental | Proton integration pending |
-| macOS x64 / ARM64 | File management only | Not supported by the game/mod |
+| macOS x64 / ARM64 | Experimental | Through CrossOver 26 or newer (D3DMetal or DXMT) |
 
 "Cross-platform" applies to the installer. Sunrise remains a Windows DLL for a Windows build of Destiny 2.
+
+On macOS the launcher runs the game inside a CrossOver bottle it creates for the purpose, with
+the graphics backend chosen in Settings. Deny CrossOver the microphone in System Settings before
+the first launch, and play in fullscreen; see the CrossOver section of Settings for the reasons.
 
 ## Current installer flow
 

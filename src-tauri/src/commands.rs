@@ -9,6 +9,7 @@ use tokio::process::ChildStdin;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio_util::sync::CancellationToken;
 
+use crate::crossover;
 use crate::error::{AppError, AppResult};
 use crate::github::GitHubClient;
 use crate::installer;
@@ -89,14 +90,62 @@ pub async fn get_app_snapshot(app: AppHandle) -> AppResult<AppSnapshot> {
     let update_available = latest_release
         .as_ref()
         .is_some_and(|release| installation.update_available(release));
+    let mut platform = current_platform();
+    let crossover = crossover_status_blocking(preferences.clone()).await?;
+    if let Some(status) = crossover.as_ref() {
+        platform.can_launch = status.ready;
+    }
     Ok(AppSnapshot {
-        platform: current_platform(),
+        platform,
         preferences,
         installation,
         latest_release,
         update_available,
         release_error,
+        crossover,
     })
+}
+
+#[cfg(target_os = "macos")]
+fn crossover_status(preferences: &Preferences) -> Option<crossover::CrossOverStatus> {
+    Some(crossover::status(preferences))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn crossover_status(_preferences: &Preferences) -> Option<crossover::CrossOverStatus> {
+    None
+}
+
+/// The status reads the bottle folder and asks plutil for CrossOver's version, so it runs on
+/// a blocking thread rather than inside the async command itself.
+async fn crossover_status_blocking(
+    preferences: Preferences,
+) -> AppResult<Option<crossover::CrossOverStatus>> {
+    tauri::async_runtime::spawn_blocking(move || crossover_status(&preferences))
+        .await
+        .map_err(|error| AppError::message(format!("CrossOver status was interrupted: {error}")))
+}
+
+#[tauri::command]
+pub async fn get_crossover_status(
+    preferences: Preferences,
+) -> AppResult<Option<crossover::CrossOverStatus>> {
+    crossover_status_blocking(preferences).await
+}
+
+/// Creates the game's CrossOver bottle. Runs on a blocking thread because bottle creation
+/// takes a few seconds and must not stall the interface.
+#[tauri::command]
+pub async fn prepare_crossover(
+    app: AppHandle,
+    preferences: Preferences,
+) -> AppResult<crossover::CrossOverStatus> {
+    storage::save_preferences(&app, &preferences).await?;
+    tauri::async_runtime::spawn_blocking(move || crossover::prepare(&preferences))
+        .await
+        .map_err(|error| {
+            AppError::message(format!("Bottle preparation was interrupted: {error}"))
+        })?
 }
 
 #[tauri::command]
@@ -134,15 +183,15 @@ pub async fn run_operation(
         .cancel
         .lock()
         .expect("operation cancel mutex poisoned") = Some(cancel.clone());
-    let preferences = Preferences {
-        install_directory: request.install_directory.clone(),
-        steam_username: request.steam_username.clone(),
-        steam_language: resolve_language(&request.steam_language)
-            .steam_language
-            .into(),
-        auth_method: request.auth_method,
-    };
     let result = async {
+        // Only the fields the request carries change; platform settings keep their values.
+        let mut preferences = storage::load_preferences(&app).await?;
+        preferences.install_directory = request.install_directory.clone();
+        preferences.steam_username = request.steam_username.clone();
+        preferences.steam_language = resolve_language(&request.steam_language)
+            .steam_language
+            .into();
+        preferences.auth_method = request.auth_method;
         storage::save_preferences(&app, &preferences).await?;
         installer::run(
             &app,
@@ -197,18 +246,26 @@ pub fn cancel_operation(state: State<'_, OperationState>) -> bool {
 }
 
 #[tauri::command]
-pub fn launch_game(install_directory: String) -> AppResult<()> {
-    #[cfg(not(windows))]
-    {
-        let _ = install_directory;
-        return Err(AppError::message(
-            "Launching is currently supported on Windows only. Proton launch configuration is not implemented yet.",
-        ));
-    }
+pub async fn launch_game(app: AppHandle, install_directory: String) -> AppResult<()> {
+    let root = PathBuf::from(install_directory.trim());
     #[cfg(windows)]
     {
-        let root = PathBuf::from(install_directory.trim());
+        let _ = app;
         launch_windows(&root)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let preferences = storage::load_preferences(&app).await?;
+        tauri::async_runtime::spawn_blocking(move || crossover::launch(&root, &preferences))
+            .await
+            .map_err(|error| AppError::message(format!("The launch was interrupted: {error}")))?
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        let _ = (app, root);
+        Err(AppError::message(
+            "Launching is currently supported on Windows and macOS only. Proton launch configuration is not implemented yet.",
+        ))
     }
 }
 

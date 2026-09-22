@@ -2133,3 +2133,32 @@ input::placeholder {
     transition-duration: 0.01ms !important;
   }
 }
+
+.crossover-section[hidden] {
+  display: none;
+}
+
+.crossover-status {
+  margin: 4px 0 6px;
+  padding: 9px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--faint);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.crossover-status.ready {
+  border-color: rgba(126, 200, 140, 0.4);
+  color: rgba(160, 220, 170, 0.92);
+}
+
+.crossover-status.problem {
+  border-color: rgba(226, 194, 103, 0.4);
+  color: rgba(226, 194, 103, 0.92);
+}
+
+.crossover-actions {
+  margin-top: 4px;
+}

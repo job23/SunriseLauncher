@@ -9,6 +9,20 @@ type Preferences = {
   steamUsername: string;
   steamLanguage: string;
   authMethod: AuthMethod;
+  crossoverBottle: string;
+  crossoverBackend: string;
+};
+type CrossOverStatus = {
+  supported: boolean;
+  installed: boolean;
+  appPath: string | null;
+  version: string | null;
+  bottleName: string;
+  bottlePath: string;
+  bottleExists: boolean;
+  graphicsBackend: string | null;
+  ready: boolean;
+  error: string | null;
 };
 type PlatformSupport = {
   os: string;
@@ -42,6 +56,7 @@ type AppSnapshot = {
   latestRelease: ReleaseInfo | null;
   updateAvailable: boolean;
   releaseError: string | null;
+  crossover: CrossOverStatus | null;
 };
 type OperationKind = "install" | "repair" | "update" | "missions";
 type OperationEvent =
@@ -85,6 +100,11 @@ const primaryLabel = element<HTMLElement>("#primary-label");
 const repairAction = element<HTMLButtonElement>("#repair-action");
 const missionsAction = element<HTMLButtonElement>("#missions-action");
 const launchAction = element<HTMLButtonElement>("#launch-action");
+const crossoverSection = element<HTMLElement>("#crossover-section");
+const crossoverStatus = element<HTMLElement>("#crossover-status");
+const crossoverBottle = element<HTMLInputElement>("#crossover-bottle");
+const crossoverBackend = element<HTMLSelectElement>("#crossover-backend");
+const crossoverPrepare = element<HTMLButtonElement>("#crossover-prepare");
 const consoleOutput = element<HTMLElement>("#console-output");
 const toast = element<HTMLElement>("#toast");
 const settingsView = element<HTMLElement>("#settings-view");
@@ -121,6 +141,8 @@ let setupDraft: Preferences = {
   steamUsername: "",
   steamLanguage: "english",
   authMethod: "qr",
+  crossoverBottle: "Sunrise",
+  crossoverBackend: "d3dmetal",
 };
 let setupInspection: InstallationSnapshot | null = null;
 let setupLanguageFolder = "";
@@ -166,6 +188,8 @@ const mockSnapshot: AppSnapshot = {
     steamUsername: "",
     steamLanguage: "english",
     authMethod: "qr",
+    crossoverBottle: "Sunrise",
+    crossoverBackend: "d3dmetal",
   },
   installation: {
     status: "notInstalled",
@@ -187,6 +211,7 @@ const mockSnapshot: AppSnapshot = {
   },
   updateAvailable: false,
   releaseError: null,
+  crossover: null,
 };
 
 async function invokeCommand<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
@@ -324,9 +349,43 @@ function updateLanguageWarnings() {
   element<HTMLElement>("#setup-language-warning").hidden = setupGameLanguage.value === "english";
 }
 
+function crossoverPreferences() {
+  return {
+    crossoverBottle: crossoverBottle.value.trim() || "Sunrise",
+    crossoverBackend: crossoverBackend.value || "d3dmetal",
+  };
+}
+
+function renderCrossover(data: AppSnapshot) {
+  const status = data.crossover;
+  crossoverSection.hidden = data.platform.os !== "macos" || !status;
+  if (!status) return;
+  crossoverBottle.value = data.preferences.crossoverBottle || "Sunrise";
+  crossoverBackend.value = data.preferences.crossoverBackend || "d3dmetal";
+  let text: string;
+  let className = "crossover-status";
+  const version = status.version ? ` ${status.version}` : "";
+  if (status.error) {
+    text = status.error;
+    className += " problem";
+  } else if (status.bottleExists) {
+    const backend = status.graphicsBackend ? ` · ${status.graphicsBackend.toUpperCase()}` : "";
+    text = `CrossOver${version} found · bottle "${status.bottleName}" is ready${backend}.`;
+    className += " ready";
+  } else {
+    text = `CrossOver${version} found. The bottle "${status.bottleName}" does not exist yet; prepare it before the first launch.`;
+    className += " problem";
+  }
+  crossoverStatus.textContent = text;
+  crossoverStatus.className = className;
+  crossoverPrepare.disabled = operationRunning || gameLaunching || !status.installed || status.bottleExists;
+  crossoverPrepare.textContent = status.bottleExists ? "Bottle ready" : "Prepare bottle";
+}
+
 function renderSnapshot(data: AppSnapshot) {
   snapshot = data;
   gameLanguage.value = data.preferences.steamLanguage || "english";
+  renderCrossover(data);
   updateLanguageWarnings();
   const copy = statusCopy(data.installation);
   element("#install-status").textContent = copy.title;
@@ -403,6 +462,7 @@ async function saveAndInspect() {
     steamUsername: steamUsername.value.trim(),
     steamLanguage: gameLanguage.value,
     authMethod: snapshot?.preferences.authMethod ?? "qr",
+    ...crossoverPreferences(),
   };
   try {
     const installation = await invokeCommand<InstallationSnapshot>("inspect_installation", {
@@ -545,6 +605,7 @@ function openSetup() {
     steamUsername: steamUsername.value.trim(),
     steamLanguage: snapshot?.preferences.steamLanguage ?? "english",
     authMethod: snapshot?.preferences.authMethod ?? "qr",
+    ...crossoverPreferences(),
   };
   setupInspection = snapshot?.installation ?? null;
   setupLanguageFolder = "";
@@ -604,6 +665,8 @@ async function advanceSetup() {
     steamUsername: setupView.dataset.steamUsername ?? setupDraft.steamUsername,
     steamLanguage: setupView.dataset.steamLanguage ?? setupDraft.steamLanguage,
     authMethod: (setupView.dataset.authMethod as AuthMethod | undefined) ?? setupDraft.authMethod,
+    crossoverBottle: setupDraft.crossoverBottle,
+    crossoverBackend: setupDraft.crossoverBackend,
   };
   installDirectory.value = setupPreferences.installDirectory;
   steamUsername.value = setupPreferences.steamUsername;
@@ -881,6 +944,7 @@ async function runOperation(kind: OperationKind, requestedPreferences?: Preferen
     steamUsername: steamUsername.value.trim(),
     steamLanguage: gameLanguage.value,
     authMethod: snapshot?.preferences.authMethod ?? "qr",
+    ...crossoverPreferences(),
   };
   activeAuthMethod = operationPreferences.authMethod;
   operationRunning = true;
@@ -1060,6 +1124,33 @@ window.addEventListener("DOMContentLoaded", () => {
     void saveAndInspect();
   });
   element("#refresh-status").addEventListener("click", () => loadSnapshot(true));
+  element("#crossover-refresh").addEventListener("click", () => loadSnapshot(true));
+  const refreshCrossover = async () => {
+    await saveAndInspect();
+    if (!snapshot || snapshot.platform.os !== "macos") return;
+    try {
+      const status = await invokeCommand<CrossOverStatus | null>("get_crossover_status", { preferences: snapshot.preferences });
+      renderSnapshot({ ...snapshot, crossover: status, platform: { ...snapshot.platform, canLaunch: Boolean(status?.ready) } });
+    } catch (error) {
+      showToast(String(error), "error");
+    }
+  };
+  crossoverBottle.addEventListener("change", refreshCrossover);
+  crossoverBackend.addEventListener("change", refreshCrossover);
+  crossoverPrepare.addEventListener("click", async () => {
+    if (operationRunning || gameLaunching || !snapshot) return;
+    crossoverPrepare.disabled = true;
+    crossoverPrepare.textContent = "Preparing…";
+    const preferences: Preferences = { ...snapshot.preferences, ...crossoverPreferences() };
+    try {
+      const status = await invokeCommand<CrossOverStatus>("prepare_crossover", { preferences });
+      renderSnapshot({ ...snapshot, preferences, crossover: status, platform: { ...snapshot.platform, canLaunch: status.ready } });
+      showToast(status.ready ? "The CrossOver bottle is ready." : "The bottle could not be prepared.", status.ready ? "info" : "error");
+    } catch (error) {
+      if (snapshot) renderSnapshot(snapshot);
+      showToast(String(error), "error");
+    }
+  });
   primaryAction.addEventListener("click", () => {
     if (primaryMode === "install") {
       openSetup();

@@ -128,6 +128,34 @@
             </details>
           </section>
 
+          <section class="settings-section crossover-section" id="crossover-section" hidden>
+            <div class="section-heading"><span>CrossOver</span><button class="refresh-button" id="crossover-refresh" type="button">Refresh</button></div>
+
+            <div class="crossover-status" id="crossover-status" role="status">Checking for CrossOver…</div>
+
+            <label class="setting-field" for="crossover-bottle">
+              <span><strong>Bottle</strong><small>A folder CrossOver keeps the Windows side in</small></span>
+              <input id="crossover-bottle" type="text" spellcheck="false" placeholder="Sunrise" autocomplete="off" />
+            </label>
+
+            <label class="setting-field" for="crossover-backend">
+              <span><strong>Graphics</strong><small>Applied when the bottle is created</small></span>
+              <select id="crossover-backend">
+                <option value="d3dmetal">D3DMetal</option>
+                <option value="dxmt">DXMT</option>
+              </select>
+            </label>
+
+            <div class="settings-actions crossover-actions">
+              <button class="button secondary" id="crossover-prepare" type="button" disabled>Prepare bottle</button>
+            </div>
+
+            <div class="security-note crossover-note">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.7 3.2 8 7.5 9.5 4.3-1.5 7.5-4.8 7.5-9.5V6L12 3Z"/></svg>
+              <p><strong>Before the first launch, deny CrossOver the microphone.</strong><span>System Settings › Privacy &amp; Security › Microphone. With the microphone allowed, the game freezes the first time the pause menu changes the audio state. Play in fullscreen.</span></p>
+            </div>
+          </section>
+
           <section class="settings-section install-section">
             <div class="section-heading"><span>Current install</span><button class="refresh-button" id="refresh-status" type="button">Refresh</button></div>
 

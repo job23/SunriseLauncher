@@ -113,6 +113,11 @@ pub struct Preferences {
     pub steam_language: String,
     #[serde(default)]
     pub auth_method: AuthMethod,
+    // CrossOver settings; only meaningful on macOS and ignored elsewhere.
+    #[serde(default = "default_crossover_bottle")]
+    pub crossover_bottle: String,
+    #[serde(default = "default_crossover_backend")]
+    pub crossover_backend: String,
 }
 
 impl Default for Preferences {
@@ -122,8 +127,18 @@ impl Default for Preferences {
             steam_username: String::new(),
             steam_language: default_steam_language(),
             auth_method: AuthMethod::default(),
+            crossover_bottle: default_crossover_bottle(),
+            crossover_backend: default_crossover_backend(),
         }
     }
+}
+
+fn default_crossover_bottle() -> String {
+    crate::crossover::DEFAULT_BOTTLE.into()
+}
+
+fn default_crossover_backend() -> String {
+    crate::crossover::DEFAULT_BACKEND.into()
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -254,6 +269,8 @@ pub struct AppSnapshot {
     pub latest_release: Option<ReleaseInfo>,
     pub update_available: bool,
     pub release_error: Option<String>,
+    /// Present only on macOS; `None` everywhere else.
+    pub crossover: Option<crate::crossover::CrossOverStatus>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -332,9 +349,10 @@ pub fn current_platform() -> PlatformSupport {
         "macos" => PlatformSupport {
             os,
             arch,
-            level: "installOnly".into(),
+            level: "experimental".into(),
+            // Raised once CrossOver and the game's bottle are found.
             can_launch: false,
-            summary: "The Windows game files can be managed, but Sunrise cannot currently run on macOS.".into(),
+            summary: "Native installation is supported; the game launches through CrossOver.".into(),
         },
         _ => PlatformSupport {
             os,
@@ -351,7 +369,8 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::{
-        InstallationSnapshot, InstallerState, LANGUAGES, ReleaseInfo, depots_for, resolve_language,
+        AuthMethod, InstallationSnapshot, InstallerState, LANGUAGES, Preferences, ReleaseInfo,
+        depots_for, resolve_language,
     };
 
     fn installed_snapshot(digest: Option<&str>) -> InstallationSnapshot {
@@ -411,6 +430,23 @@ mod tests {
             state.manifests.get(&1_085_661),
             Some(&7_180_122_903_232_116_872)
         );
+    }
+
+    #[test]
+    fn preferences_written_before_crossover_support_still_load() {
+        let preferences: Preferences = serde_json::from_str(
+            r#"{
+                "installDirectory": "/Users/guardian/Games/Sunrise",
+                "steamUsername": "guardian",
+                "steamLanguage": "french",
+                "authMethod": "twoFactor"
+            }"#,
+        )
+        .expect("legacy preferences should remain compatible");
+
+        assert_eq!(preferences.auth_method, AuthMethod::TwoFactor);
+        assert_eq!(preferences.crossover_bottle, "Sunrise");
+        assert_eq!(preferences.crossover_backend, "d3dmetal");
     }
 
     #[test]
